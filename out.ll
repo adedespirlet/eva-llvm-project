@@ -5,5 +5,5 @@ source_filename = "EvaLLVM"
 
 define i32 @main() {
 entry:
-  ret i32 ptrtoint ([13 x i8]* @0 to i32)
+  ret i32 0
 }

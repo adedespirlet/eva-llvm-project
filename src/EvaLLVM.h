@@ -16,6 +16,7 @@ class EvaLLVM{
 
     EvaLLVM(){
         moduleInit();
+        setupExternFunctions();
     }
     //$ denotes that parameter is a reference to a std::string object
     void exec(const std::string& program){
@@ -43,10 +44,21 @@ class EvaLLVM{
         //recursive compiler for the body function
         auto result =gen();
 
-        auto i32Result= builder->CreateIntCast(result,builder->getInt32Ty(),true);
+        //auto i32Result= builder->CreateIntCast(result,builder->getInt32Ty(),true);
 
-        builder->CreateRet(i32Result);
+        //builder->CreateRet(i32Result);
+        builder->CreateRet(builder->getInt32(0));
 
+    }
+
+    //define external functions
+
+    void setupExternFunctions(){
+
+        //getInt8Ty() metho dproved by llvmcontext class to create an 8bit int type
+        auto bytePtrTy = builder-> getInt8Ty()->getPointerTo();
+        //int printf(const char* format, ...)
+        module->getOrInsertFunction("printf",llvm::FunctionType::get(/*return type*/builder->getInt32Ty(),/*arguments*/bytePtrTy,/*vararg*/ true));
     }
 
     void savedModuleToFile(const std::string& fileName){
