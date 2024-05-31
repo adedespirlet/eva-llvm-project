@@ -78,7 +78,8 @@ class EvaLLVM{
 
     //main compile loop
     llvm::Value* gen(){
-        return  builder->getInt32(42); 
+        //return  builder->getInt32(42); 
+        return builder->CreateGlobalStringPtr("Hello world!") ;
     }
 
     llvm::Function* createFunction(const std::string& fnName, llvm::FunctionType* fnType){
