@@ -28,9 +28,11 @@ class EvaLLVM{
 
         //2 compile to LLVM IR from ast
         compile(ast);
-
+        std::cout << "\n";
         //print generated code to the console
         module->print(llvm::outs(),nullptr);
+
+        
 
         //3 save module IR to file
         savedModuleToFile("./out.ll");
@@ -44,17 +46,26 @@ class EvaLLVM{
         //
         fn= createFunction("main", llvm::FunctionType::get(builder->getInt32Ty(),false));
         //recursive compiler for the body function
-        auto result =gen(ast);
+        
 
         //auto i32Result= builder->CreateIntCast(result,builder->getInt32Ty(),true);
-
+        //createGlobalVar("VERSION",builder->getInt32(42));
+        auto result =gen(ast);
         //builder->CreateRet(i32Result);
         builder->CreateRet(builder->getInt32(0));
 
     }
 
-    //define external functions
 
+    //create a global variable
+    llvm::GlobalVariable* createGlobalVar(const std::string& name, llvm::Constant* init){
+        module->getOrInsertGlobal(name,init->getType());
+        auto variable =module->getNamedGlobal(name);
+        variable->setAlignment(llvm::MaybeAlign(4));
+        variable->setInitializer(init);
+        return variable;
+    }
+    //define external functions
     void setupExternFunctions(){
 
         //getInt8Ty() metho dproved by llvmcontext class to create an 8bit int type
@@ -106,8 +117,8 @@ class EvaLLVM{
         //need to handle different expression types
 
         switch(exp.type){
-
             case ExpType::NUMBER:
+                printf("number");
                 //creates a 32bit int constant in the IR
                  return builder->getInt32(exp.number);
 
@@ -115,13 +126,38 @@ class EvaLLVM{
                  return builder->CreateGlobalStringPtr(exp.string);
             //variables,operators
             case ExpType::SYMBOL:
-                 return builder->getInt32(0);
+                //boolean check
+                if (exp.string == "true" || exp.string== "false"){
+                    return builder->getInt1(exp.string =="true"? true:false);
+                }else{
+                    //variables
+                    //1.local variables
+                    
+                    //2. global variables
+                    return module->getNamedGlobal(exp.string)->getInitializer();
 
+                }
+
+                return builder->getInt32(0);
+
+
+//recursive check, 
             case ExpType::LIST:
+                
                 auto tag=exp.list[0]; 
                 if (tag.type == ExpType::SYMBOL){
                     auto op= tag.string;
-                    if (op == "printf"){
+                    
+                    //variable declaration
+                    if (op =="var"){
+                        printf("debug");
+                        auto varName= exp.list[1].string;
+                        auto init= gen(exp.list[2]);
+                        
+                        return createGlobalVar(varName,(llvm::Constant*)init)->getInitializer();
+                    }
+                   
+                    else if (op == "printf"){
                         auto printfFn = module->getFunction("printf");
                          std::vector<llvm::Value*> args{};
                          for (auto i =1; i<exp.list.size();i++){
@@ -134,10 +170,6 @@ class EvaLLVM{
         return builder->getInt32(0);
         
         }
-
-
-
-
 
     }
 

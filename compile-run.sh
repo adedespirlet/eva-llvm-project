@@ -5,3 +5,5 @@ clang++ -std=c++11 -fexceptions -o eva-llvm $(llvm-config --cxxflags --ldflags -
 
 #execute generated IR
 lli ./out.ll
+echo $?
+printf "\n"
