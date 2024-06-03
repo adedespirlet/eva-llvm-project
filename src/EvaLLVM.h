@@ -35,8 +35,7 @@ class EvaLLVM{
         //print generated code to the console
         module->print(llvm::outs(),nullptr);
 
-        
-
+    
         //3 save module IR to file
         savedModuleToFile("./out.ll");
     }
@@ -59,7 +58,36 @@ class EvaLLVM{
 
     }
 
+    std::string extractVarName(const Exp& exp){
+        return exp.type == ExpType::LIST? exp.list[0].string :exp.string;
+    }
 
+    llvm::Type* extractVarType(const Exp& exp){
+        return exp.type == ExpType::LIST? getTypeFromString(exp.list[1].string) :builder->getInt32Ty();
+    }
+
+    llvm::Type* getTypeFromString(const std::string& type_){
+        if (type_ =="number"){
+            return builder->getInt32Ty();
+        }
+
+        else if (type_=="string"){
+            return builder->getInt8Ty()->getPointerTo();
+        }
+
+    return builder->getInt32Ty();
+    }
+
+    //allocates a local variable on the stack
+    llvm::Value* allocVar(const std::string& name,llvm::Type* type_,Env env){
+        varsBuilder->SetInsertPoint(&fn->getEntryBlock());
+        //create alloca instruction in IR that allocates memory on the stack for local variable
+        auto varAlloc = varsBuilder->CreateAlloca(type_,0,name.c_str());
+
+        env->define(name,varAlloc);
+        return varAlloc;
+
+    }
     //create a global variable
     llvm::GlobalVariable* createGlobalVar(const std::string& name, llvm::Constant* init){
         module->getOrInsertGlobal(name,init->getType());
@@ -87,7 +115,10 @@ class EvaLLVM{
         ctx= std::make_unique<llvm::LLVMContext>();
         module= std::make_unique<llvm::Module>("EvaLLVM",*ctx);
         builder= std::make_unique<llvm::IRBuilder<>>(*ctx);
+        varsBuilder= std::make_unique<llvm::IRBuilder<>>(*ctx);
     }
+
+    //second builder will points to the begining of the function where we ll be emitting the variables, it will reuse the same module etc just
     void setupGlobalEnvironment(){
         //Create a map of initial global variables.
         std::map<std::string,llvm::Value*> globalObject{
@@ -116,6 +147,8 @@ class EvaLLVM{
 
 
     std::unique_ptr<llvm::IRBuilder<>> builder;
+
+    std::unique_ptr<llvm::IRBuilder<>> varsBuilder;
 
     std::shared_ptr<Environment> GlobalEnv;
 
@@ -152,9 +185,12 @@ class EvaLLVM{
                     auto varName= exp.string;
                     auto value= env->lookup(varName);
                     //1.local variables
+                    if (auto localVar = llvm::dyn_cast<llvm::AllocaInst>(value)) {
+                        return builder->CreateLoad(localVar->getAllocatedType(),localVar,varName.c_str());
+                    }
                     
                     //2. Check if ther variable name is a global variables, globalVar should be non NULL
-                    if (auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value)){
+                    else if (auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value)){
                         //if we determine that this value is a global variable we need to load this value onto the stack by taking pointer tot the globalVar
                         return builder->CreateLoad(globalVar->getInitializer()->getType(),globalVar,varName.c_str());
                     }
@@ -171,17 +207,30 @@ class EvaLLVM{
                     //variable declaration
                     if (op =="var"){
                         printf("debug");
-                        auto varName= exp.list[1].string;
-                        auto init= gen(exp.list[2],env);
+
+                        auto varNameDecl =exp.list[1];
                         
-                        return createGlobalVar(varName,(llvm::Constant*)init)->getInitializer();
+                        //extract name and type
+                        auto varName= extractVarName(varNameDecl);
+                        auto varTy=extractVarType(varNameDecl);
+
+                        auto init= gen(exp.list[2],env);
+
+                        auto varBinding= allocVar(varName,varTy,env);
+                        //store initializer value onto the stack
+                        return builder->CreateStore(init,varBinding);
+
+                        
+                        //return createGlobalVar(varName,(llvm::Constant*)init)->getInitializer();
                     }
 
                     else if(op=="begin"){
+
+                        auto blockEnv =std::make_shared<Environment>(std::map<std::string,llvm::Value*>{},env);
                         llvm::Value* blockRes;
                         //go through list of expressions and egenerate expression code
                         for (auto i=1;i<exp.list.size();i++){
-                            blockRes=gen(exp.list[i],env);
+                            blockRes=gen(exp.list[i],blockEnv);
 
                         }
                         //last expression related is the result of the block
