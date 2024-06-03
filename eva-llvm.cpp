@@ -5,16 +5,13 @@ int main(int argc, char const *argv[]){
 
     //program to execute
     std::string program = R"(
-        (var x 42)
-        (begin
-            (var (x string) "Hello")
-            (printf "X: %s\n\n" x))
-
-        (printf "X: %d\n\n" x)
-        (set x 100)
-        (printf "X:%d\n\n" x)
+        (var z 32)
         
+        (var x (+ z 10))
 
+        (printf "Is X ==42?: %d\n" (== x 42))
+
+    
     )";
     //compiler instance
     EvaLLVM vm;

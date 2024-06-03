@@ -15,6 +15,13 @@
 
 using syntax::EvaParser;
 using Env= std::shared_ptr<Environment>;
+#define GEN_BINARY_OP(Op,varName)        \
+    do{                                  \
+        auto op1=gen(exp.list[1],env);   \
+        auto op2= gen(exp.list[2],env);   \
+        return builder->Op(op1,op2,varName);  \
+    }while (false)
+
 class EvaLLVM{
     public:
 
@@ -203,9 +210,35 @@ class EvaLLVM{
                 auto tag=exp.list[0]; 
                 if (tag.type == ExpType::SYMBOL){
                     auto op= tag.string;
+
+                    //binary math operations
+                    if(op =="+"){
+                        GEN_BINARY_OP(CreateAdd,"tmpadd");
+                    }
+
+                    else if(op == "-"){
+                        GEN_BINARY_OP(CreateSub,"tmpsub");
+                    }
+                    else if(op == "*"){
+                        GEN_BINARY_OP(CreateMul,"tmpsub");
+                    }
+                    else if(op == "/"){
+                        GEN_BINARY_OP(CreateSDiv,"tmpdiv");
+                    }
+
+                    else if(op == ">"){
+                        GEN_BINARY_OP(CreateICmpUGT,"tmpcmp");
+                    }
+                    else if(op == "<"){
+                        GEN_BINARY_OP(CreateICmpULT,"tmpcmp");
+                    }
+                    else if(op == "=="){
+                        GEN_BINARY_OP(CreateICmpEQ,"tmpcmp");
+                    }
+                    ///....////
                     
                     //variable declaration
-                    if (op =="var"){
+                    else if (op =="var"){
                         printf("debug");
 
                         auto varNameDecl =exp.list[1];
@@ -217,13 +250,20 @@ class EvaLLVM{
                         auto init= gen(exp.list[2],env);
 
                         auto varBinding= allocVar(varName,varTy,env);
-                        //store initializer value onto the stack
+                        
                         return builder->CreateStore(init,varBinding);
 
                         
                         //return createGlobalVar(varName,(llvm::Constant*)init)->getInitializer();
                     }
+                    else if (op=="set"){
+                        auto value= gen(exp.list[2],env); //generates llvm i32 cnstant
+                        auto varName=exp.list[1].string;
+                        //lookup vairbale in environment which is either a AllocaInst or a GlobalVariable inst, it returns pointer to memory loc of var
+                        auto varBinding=env->lookup(varName);
+                        return builder->CreateStore(value,varBinding);
 
+                    }
                     else if(op=="begin"){
 
                         auto blockEnv =std::make_shared<Environment>(std::map<std::string,llvm::Value*>{},env);

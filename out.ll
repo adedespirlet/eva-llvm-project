@@ -2,24 +2,20 @@
 source_filename = "EvaLLVM"
 
 @VERSION = global i32 42, align 4
-@0 = private unnamed_addr constant [6 x i8] c"Hello\00", align 1
-@1 = private unnamed_addr constant [10 x i8] c"X: %s\\n\\n\00", align 1
-@2 = private unnamed_addr constant [10 x i8] c"X: %d\\n\\n\00", align 1
-@3 = private unnamed_addr constant [9 x i8] c"X:%d\\n\\n\00", align 1
+@0 = private unnamed_addr constant [17 x i8] c"Is X ==42?: %d\\n\00", align 1
 
 declare i32 @printf(i8*, ...)
 
 define i32 @main() {
 entry:
+  %z = alloca i32
+  store i32 32, i32* %z
+  %z1 = load i32, i32* %z
+  %tmpadd = add i32 %z1, 10
   %x = alloca i32
-  store i32 42, i32* %x
-  %x1 = alloca i8*
-  store i8* getelementptr inbounds ([6 x i8], [6 x i8]* @0, i32 0, i32 0), i8** %x1
-  %x2 = load i8*, i8** %x1
-  %0 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([10 x i8], [10 x i8]* @1, i32 0, i32 0), i8* %x2)
-  %x3 = load i32, i32* %x
-  %1 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([10 x i8], [10 x i8]* @2, i32 0, i32 0), i32 %x3)
-  %x4 = load i32, i32* %x
-  %2 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @3, i32 0, i32 0), i32 %x4)
+  store i32 %tmpadd, i32* %x
+  %x2 = load i32, i32* %x
+  %tmpcmp = icmp eq i32 %x2, 42
+  %0 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([17 x i8], [17 x i8]* @0, i32 0, i32 0), i1 %tmpcmp)
   ret i32 0
 }
