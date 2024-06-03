@@ -10,21 +10,24 @@
 #include <llvm/IR/Verifier.h>
 #include <iostream>
 #include "./parser/EvaParser.h"
+#include "./Environment.h"
 
 
 using syntax::EvaParser;
+using Env= std::shared_ptr<Environment>;
 class EvaLLVM{
     public:
 
     EvaLLVM(): parser(std::make_unique<EvaParser>()){
         moduleInit();
         setupExternFunctions();
+        setupGlobalEnvironment();
     }
     //$ denotes that parameter is a reference to a std::string object
     void exec(const std::string& program){
 
         //1 parse the program, outputs an AST
-        auto ast = parser->parse(program);
+        auto ast = parser->parse("(begin"+program+")");
 
         //2 compile to LLVM IR from ast
         compile(ast);
@@ -44,13 +47,13 @@ class EvaLLVM{
 
     void compile(const Exp& ast){
         //
-        fn= createFunction("main", llvm::FunctionType::get(builder->getInt32Ty(),false));
+        //start generation of code in globalenvironment
+        fn= createFunction("main", llvm::FunctionType::get(builder->getInt32Ty(),false),GlobalEnv);
         //recursive compiler for the body function
         
-
         //auto i32Result= builder->CreateIntCast(result,builder->getInt32Ty(),true);
         //createGlobalVar("VERSION",builder->getInt32(42));
-        auto result =gen(ast);
+        auto result =gen(ast,GlobalEnv);
         //builder->CreateRet(i32Result);
         builder->CreateRet(builder->getInt32(0));
 
@@ -85,8 +88,21 @@ class EvaLLVM{
         module= std::make_unique<llvm::Module>("EvaLLVM",*ctx);
         builder= std::make_unique<llvm::IRBuilder<>>(*ctx);
     }
-
-    llvm::Function* fn;
+    void setupGlobalEnvironment(){
+        //Create a map of initial global variables.
+        std::map<std::string,llvm::Value*> globalObject{
+            {"VERSION",builder->getInt32(42)},
+        };
+        //Create an empty map for the global record
+        std::map<std::string,llvm::Value*> globalRec{};
+        //Populate the global record map by creating global variables in IR
+        for (auto& entry: globalObject){
+            globalRec[entry.first]= createGlobalVar(entry.first, (llvm::Constant*)entry.second);
+        }
+        //parent link is set to nullpntr
+        GlobalEnv =std::make_shared<Environment>(globalRec,nullptr);
+    }
+    llvm::Function* fn; 
 
     std::unique_ptr<EvaParser> parser;
 
@@ -101,10 +117,12 @@ class EvaLLVM{
 
     std::unique_ptr<llvm::IRBuilder<>> builder;
 
+    std::shared_ptr<Environment> GlobalEnv;
+
 
 
     //main compile loop
-    llvm::Value* gen(const Exp&  exp){
+    llvm::Value* gen(const Exp&  exp, Env env){
         //return  builder->getInt32(42); 
         // auto str = builder->CreateGlobalStringPtr("Hello world!") ;
         // auto printfFn = module->getFunction("printf");
@@ -131,17 +149,19 @@ class EvaLLVM{
                     return builder->getInt1(exp.string =="true"? true:false);
                 }else{
                     //variables
+                    auto varName= exp.string;
+                    auto value= env->lookup(varName);
                     //1.local variables
                     
-                    //2. global variables
-                    return module->getNamedGlobal(exp.string)->getInitializer();
-
+                    //2. Check if ther variable name is a global variables, globalVar should be non NULL
+                    if (auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value)){
+                        //if we determine that this value is a global variable we need to load this value onto the stack by taking pointer tot the globalVar
+                        return builder->CreateLoad(globalVar->getInitializer()->getType(),globalVar,varName.c_str());
+                    }
                 }
 
                 return builder->getInt32(0);
 
-
-//recursive check, 
             case ExpType::LIST:
                 
                 auto tag=exp.list[0]; 
@@ -152,16 +172,28 @@ class EvaLLVM{
                     if (op =="var"){
                         printf("debug");
                         auto varName= exp.list[1].string;
-                        auto init= gen(exp.list[2]);
+                        auto init= gen(exp.list[2],env);
                         
                         return createGlobalVar(varName,(llvm::Constant*)init)->getInitializer();
+                    }
+
+                    else if(op=="begin"){
+                        llvm::Value* blockRes;
+                        //go through list of expressions and egenerate expression code
+                        for (auto i=1;i<exp.list.size();i++){
+                            blockRes=gen(exp.list[i],env);
+
+                        }
+                        //last expression related is the result of the block
+                        return blockRes;
+                        
                     }
                    
                     else if (op == "printf"){
                         auto printfFn = module->getFunction("printf");
                          std::vector<llvm::Value*> args{};
                          for (auto i =1; i<exp.list.size();i++){
-                            args.push_back(gen(exp.list[i]));
+                            args.push_back(gen(exp.list[i],env));
                          }
                          return builder->CreateCall(printfFn,args);
                     }
@@ -173,12 +205,12 @@ class EvaLLVM{
 
     }
 
-    llvm::Function* createFunction(const std::string& fnName, llvm::FunctionType* fnType){
+    llvm::Function* createFunction(const std::string& fnName, llvm::FunctionType* fnType, Env env){
         //check if funcrion protoype is alredy defined
         auto fn = module->getFunction(fnName);
         //if functionname doesnt exist create functionprototype
         if (fn ==nullptr){
-            fn=createFunctionProto(fnName,fnType);
+            fn=createFunctionProto(fnName,fnType,env);
         }
 
         //now function is defined create function block
@@ -195,9 +227,10 @@ class EvaLLVM{
         return llvm::BasicBlock::Create(*ctx,name,fn);
     }
 
-    llvm::Function* createFunctionProto(const std::string& fnName,llvm::FunctionType* fnType){
+    llvm::Function* createFunctionProto(const std::string& fnName,llvm::FunctionType* fnType, Env env){
         auto fn = llvm::Function::Create(fnType,llvm::Function::ExternalLinkage,fnName,*module);
         verifyFunction(*fn);
+        env->define(fnName,fn);
 
         return fn;
     }
