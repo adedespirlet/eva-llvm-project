@@ -284,7 +284,16 @@ class EvaLLVM{
                         auto cond =gen(exp.list[1],env);
 
                         builder->CreateCondBr(cond,bodyBlock,loopEndBlock);
+                        //handle nestsed while loops or nested if expressions
+                        fn->getBasicBlockList().push_back(bodyBlock);
+                        builder->SetInsertPoint(bodyBlock);
+                        gen(exp.list[2],env);
+                        builder->CreateBr(condBlock);
 
+                        fn->getBasicBlockList().push_back(loopEndBlock);
+                        builder->SetInsertPoint(loopEndBlock);
+
+                        return builder->getInt32(0);
                         //Body
                     }
 

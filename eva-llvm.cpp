@@ -5,16 +5,15 @@ int main(int argc, char const *argv[]){
 
     //program to execute
     std::string program = R"(
-        (var z 32)
+      
         
-        (var x (+ z 10))
+        (var x 10)
+        (while (> x 0)
+            (begin
+                (set x (- x 1))
+                (printf "%d" x)))
 
-        (if (== x 42)
-            (if (> x 42)
-            1
-            3)
-        2)
-
+       
     )";
     //compiler instance
     EvaLLVM vm;
