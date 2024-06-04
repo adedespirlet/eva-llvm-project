@@ -236,7 +236,58 @@ class EvaLLVM{
                         GEN_BINARY_OP(CreateICmpEQ,"tmpcmp");
                     }
                     ///....////
-                    
+                    else if(op =="if"){
+                        //compile condition
+                        auto cond= gen(exp.list[1],env);
+                        auto thenBlock =createBB("then",fn);
+
+                        auto elseBlock=createBB("else");
+                        auto ifEndBlock=createBB("ifend");
+
+                        //condition branch
+                        builder->CreateCondBr(cond,thenBlock,elseBlock);
+
+                        //emit code in specific block
+                        builder->SetInsertPoint(thenBlock);
+                        auto thenRes= gen(exp.list[2],env);
+                        builder->CreateBr(ifEndBlock);
+
+                        //restore the block to handle nested if-exp
+                        thenBlock=builder->GetInsertBlock();
+
+                        fn->getBasicBlockList().push_back(elseBlock);
+                        //else branch
+                        builder->SetInsertPoint(elseBlock);
+                        auto elseRes= gen(exp.list[3],env);
+                        builder->CreateBr(ifEndBlock);
+                        //restore block for phi sintruction
+                        elseBlock=builder->GetInsertBlock();
+
+                        fn->getBasicBlockList().push_back(ifEndBlock);
+                        builder->SetInsertPoint(ifEndBlock);
+                        //isntruction returns a the result based on the previous bloc that was executed
+                        auto phi = builder->CreatePHI(thenRes->getType(),2,"tmpif");
+                        phi->addIncoming(thenRes,thenBlock);
+                        phi->addIncoming(elseRes,elseBlock);
+
+                        return phi;
+                    }
+                    //(while <cond> <body>)
+                    else if (op=="while"){
+                        auto condBlock= createBB("cond",fn);
+                        builder->CreateBr(condBlock);
+
+                        auto bodyBlock=createBB("body");
+                        auto loopEndBlock=createBB("loopend");
+
+                        builder->SetInsertPoint(condBlock);
+                        auto cond =gen(exp.list[1],env);
+
+                        builder->CreateCondBr(cond,bodyBlock,loopEndBlock);
+
+                        //Body
+                    }
+
                     //variable declaration
                     else if (op =="var"){
                         printf("debug");
@@ -261,7 +312,8 @@ class EvaLLVM{
                         auto varName=exp.list[1].string;
                         //lookup vairbale in environment which is either a AllocaInst or a GlobalVariable inst, it returns pointer to memory loc of var
                         auto varBinding=env->lookup(varName);
-                        return builder->CreateStore(value,varBinding);
+                        builder->CreateStore(value,varBinding);
+                        return value;
 
                     }
                     else if(op=="begin"){

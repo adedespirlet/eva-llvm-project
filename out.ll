@@ -2,7 +2,6 @@
 source_filename = "EvaLLVM"
 
 @VERSION = global i32 42, align 4
-@0 = private unnamed_addr constant [17 x i8] c"Is X ==42?: %d\\n\00", align 1
 
 declare i32 @printf(i8*, ...)
 
@@ -16,6 +15,27 @@ entry:
   store i32 %tmpadd, i32* %x
   %x2 = load i32, i32* %x
   %tmpcmp = icmp eq i32 %x2, 42
-  %0 = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([17 x i8], [17 x i8]* @0, i32 0, i32 0), i1 %tmpcmp)
+  br i1 %tmpcmp, label %then, label %else6
+
+then:                                             ; preds = %entry
+  %x3 = load i32, i32* %x
+  %tmpcmp4 = icmp ugt i32 %x3, 42
+  br i1 %tmpcmp4, label %then5, label %else
+
+then5:                                            ; preds = %then
+  br label %ifend
+
+else:                                             ; preds = %then
+  br label %ifend
+
+ifend:                                            ; preds = %else, %then5
+  %tmpif = phi i32 [ 1, %then5 ], [ 3, %else ]
+  br label %ifend7
+
+else6:                                            ; preds = %entry
+  br label %ifend7
+
+ifend7:                                           ; preds = %else6, %ifend
+  %tmpif8 = phi i32 [ %tmpif, %ifend ], [ 2, %else6 ]
   ret i32 0
 }

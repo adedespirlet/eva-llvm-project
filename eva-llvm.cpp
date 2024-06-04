@@ -9,9 +9,12 @@ int main(int argc, char const *argv[]){
         
         (var x (+ z 10))
 
-        (printf "Is X ==42?: %d\n" (== x 42))
+        (if (== x 42)
+            (if (> x 42)
+            1
+            3)
+        2)
 
-    
     )";
     //compiler instance
     EvaLLVM vm;
