@@ -95,6 +95,53 @@ class EvaLLVM{
         return varAlloc;
 
     }
+    bool hasReturnType(const Exp& fnExp){
+        return fnExp.list[3].type == ExpType::SYMBOL && fnExp.list[3].string == "->";
+    }
+
+    llvm::FunctionType* extractFunctionType(const Exp& fnExp){
+        auto params= fnExp.list[2];
+        auto returnType=hasReturnType(fnExp)? getTypeFromString(fnExp.list[4].string) : builder->getInt32Ty();
+
+        std::vector<llvm::Type*>paramTypes{};
+
+        for (auto& param: params.list){
+            auto paramTy =extractVarType(param);
+            paramTypes.push_back(paramTy);
+        }
+
+        return llvm::FunctionType::get(returnType,paramTypes,/*vararvs*/false );
+    }
+
+    llvm::Value* compileFunction(const Exp& fnExp, std::string fnName, Env env){
+
+        auto params =fnExp.list[2];
+        auto body = hasReturnType(fnExp)? fnExp.list[5]:fnExp.list[3];
+        //in case there are nested functions
+        auto prevFn=fn;
+        auto prevBlock=builder->GetInsertBlock();
+
+        auto newFn = createFunction(fnName,extractFunctionType(fnExp),env);
+        fn=newFn;
+
+        auto idx=0;
+        auto fnEnv= std::make_shared<Environment>(std::map<std::string,llvm::Value*>{},env);
+        for (auto& arg : fn->args()){       
+            auto param= params.list[idx++];
+            auto argName= extractVarName(param);
+            arg.setName(argName);
+
+            //allocate a local variable per argument
+            auto argBinding= allocVar(argName,arg.getType(),fnEnv);
+            builder->CreateStore(&arg,argBinding);
+        }
+
+        builder->CreateRet(gen(body,fnEnv));
+        //restore previous function after compiling
+        builder->SetInsertPoint(prevBlock);
+        fn=prevFn;
+        return newFn;
+    }
     //create a global variable
     llvm::GlobalVariable* createGlobalVar(const std::string& name, llvm::Constant* init){
         module->getOrInsertGlobal(name,init->getType());
@@ -201,6 +248,11 @@ class EvaLLVM{
                         //if we determine that this value is a global variable we need to load this value onto the stack by taking pointer tot the globalVar
                         return builder->CreateLoad(globalVar->getInitializer()->getType(),globalVar,varName.c_str());
                     }
+
+                    else{
+                        return value;
+
+                    }
                 }
 
                 return builder->getInt32(0);
@@ -211,6 +263,7 @@ class EvaLLVM{
                 if (tag.type == ExpType::SYMBOL){
                     auto op= tag.string;
 
+                   
                     //binary math operations
                     if(op =="+"){
                         GEN_BINARY_OP(CreateAdd,"tmpadd");
@@ -284,7 +337,7 @@ class EvaLLVM{
                         auto cond =gen(exp.list[1],env);
 
                         builder->CreateCondBr(cond,bodyBlock,loopEndBlock);
-                        //handle nestsed while loops or nested if expressions
+                        //handle nestsed while loops or nested if expressions, make sure the bodyblock is part of the funciton control graph and can be linked with other blocks
                         fn->getBasicBlockList().push_back(bodyBlock);
                         builder->SetInsertPoint(bodyBlock);
                         gen(exp.list[2],env);
@@ -316,6 +369,12 @@ class EvaLLVM{
                         
                         //return createGlobalVar(varName,(llvm::Constant*)init)->getInitializer();
                     }
+                    //function declaration (def <name> <params <body>)
+                    else if (op =="def"){
+                        return compileFunction(exp,/*name*/exp.list[1].string,env);
+                         
+                
+                    }
                     else if (op=="set"){
                         auto value= gen(exp.list[2],env); //generates llvm i32 cnstant
                         auto varName=exp.list[1].string;
@@ -346,6 +405,18 @@ class EvaLLVM{
                             args.push_back(gen(exp.list[i],env));
                          }
                          return builder->CreateCall(printfFn,args);
+                    }
+                    //function calls
+                    else {
+                        //find function in the environment that we previsouly set when createFunction
+                        auto callable = gen(exp.list[0],env);
+
+                        std::vector<llvm::Value*> args{};
+                        for (auto i=1;i<exp.list.size();i++){
+                            args.push_back(gen(exp.list[i],env));
+                        }
+                        auto fn = (llvm::Function*)callable;
+                        return builder->CreateCall(fn,args);
                     }
                 }
 
